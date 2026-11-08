@@ -334,11 +334,8 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
     }
   }
 
-  let fallbackFullscreen = false;
-
   function isFullscreenActive() {
-    const nativeFs = Boolean(rootDoc.fullscreenElement || rootDoc.webkitFullscreenElement);
-    return nativeFs || fallbackFullscreen;
+    return Boolean(rootDoc.fullscreenElement || rootDoc.webkitFullscreenElement);
   }
 
   function measureNonCanvasChrome(inFs) {
@@ -445,8 +442,7 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
     }
   }
 
-  function rollbackFullscreen() {
-    fallbackFullscreen = false;
+  function syncFullscreenUi() {
     fitLayout();
     updateUiControls();
   }
@@ -456,44 +452,31 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
     const el = rootDoc.documentElement;
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
     if (typeof req !== 'function') return;
-    fallbackFullscreen = true;
-    fitLayout();
-    updateUiControls();
     try {
       const res = req.call(el);
       if (res && typeof res.then === 'function') {
-        res.then(
-          () => {
-            fitLayout();
-            updateUiControls();
-          },
-          () => {
-            rollbackFullscreen();
-          }
-        );
+        res.then(syncFullscreenUi, syncFullscreenUi);
       }
     } catch {
-      rollbackFullscreen();
+      syncFullscreenUi();
     }
   }
 
   function exitFullscreen() {
-    fallbackFullscreen = false;
-    if (rootDoc.fullscreenElement || rootDoc.webkitFullscreenElement) {
+    if (isFullscreenActive()) {
       const exit = rootDoc.exitFullscreen || rootDoc.webkitExitFullscreen;
       if (typeof exit === 'function') {
         try {
           const res = exit.call(rootDoc);
-          if (res && typeof res.catch === 'function') {
-            res.catch(() => {});
+          if (res && typeof res.then === 'function') {
+            res.then(syncFullscreenUi, syncFullscreenUi);
           }
         } catch {
-          // Ignore exit errors
+          syncFullscreenUi();
         }
       }
     }
-    fitLayout();
-    updateUiControls();
+    syncFullscreenUi();
   }
 
   function toggleFullscreen() {
@@ -555,19 +538,11 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
     gcScript.addEventListener('load', () => flushTrackQueue());
   }
 
-  const onFsChange = () => {
-    const nativeFs = Boolean(rootDoc.fullscreenElement || rootDoc.webkitFullscreenElement);
-    if (!nativeFs) {
-      fallbackFullscreen = false;
-    }
-    fitLayout();
-    updateUiControls();
-  };
   if (typeof rootDoc.addEventListener === 'function') {
-    rootDoc.addEventListener('fullscreenchange', onFsChange);
-    rootDoc.addEventListener('webkitfullscreenchange', onFsChange);
-    rootDoc.addEventListener('fullscreenerror', rollbackFullscreen);
-    rootDoc.addEventListener('webkitfullscreenerror', rollbackFullscreen);
+    rootDoc.addEventListener('fullscreenchange', syncFullscreenUi);
+    rootDoc.addEventListener('webkitfullscreenchange', syncFullscreenUi);
+    rootDoc.addEventListener('fullscreenerror', syncFullscreenUi);
+    rootDoc.addEventListener('webkitfullscreenerror', syncFullscreenUi);
   }
 
   if (bgmBtnEl) {
