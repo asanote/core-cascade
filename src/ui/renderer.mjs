@@ -4,6 +4,9 @@ import { pieceCells, movePiece } from '../logic/piece.mjs';
 import { applyGravity } from '../logic/resolve.mjs';
 import { dropInterval } from '../logic/game.mjs';
 
+export const LOGICAL_WIDTH = 560;
+export const LOGICAL_HEIGHT = 640;
+
 export const CLEAR_FLASH_MS = 260;
 export const CLEAR_SETTLE_MS = 120;
 export const CLEAR_STAGE_MS = CLEAR_FLASH_MS + CLEAR_SETTLE_MS;
@@ -336,8 +339,10 @@ function drawBoardConnections(ctx, board, boardX, boardY, cellSize) {
 
 export function drawGame(ctx, state, anim = {}) {
   if (!ctx || !state) return;
-  const width = ctx.canvas?.width ?? 560;
-  const height = ctx.canvas?.height ?? 640;
+  const width = LOGICAL_WIDTH;
+  const height = LOGICAL_HEIGHT;
+  const actualW = ctx.canvas?.width ?? LOGICAL_WIDTH;
+  const actualH = ctx.canvas?.height ?? LOGICAL_HEIGHT;
   const view = getRenderView(state, anim);
 
   const visibleRows = ROWS - HIDDEN_ROWS;
@@ -350,6 +355,9 @@ export function drawGame(ctx, state, anim = {}) {
   const hudW = width - hudX - 28;
 
   ctx.save();
+  if ((actualW !== LOGICAL_WIDTH || actualH !== LOGICAL_HEIGHT) && typeof ctx.scale === 'function') {
+    ctx.scale(actualW / LOGICAL_WIDTH, actualH / LOGICAL_HEIGHT);
+  }
 
   // 1. Deep space geometric background
   ctx.fillStyle = '#060913';
@@ -399,6 +407,19 @@ export function drawGame(ctx, state, anim = {}) {
     ctx.lineTo(boardX + boardW, gy);
     ctx.stroke();
   }
+
+  // Danger line indicator at row y = 4 (visible row index 4 - HIDDEN_ROWS + 1 = 4)
+  const dangerY = boardY + (4 - HIDDEN_ROWS + 1) * cellSize;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 42, 133, 0.22)';
+  ctx.lineWidth = 1;
+  if (typeof ctx.setLineDash === 'function') ctx.setLineDash([5, 5]);
+  ctx.beginPath();
+  ctx.moveTo(boardX, dangerY);
+  ctx.lineTo(boardX + boardW, dangerY);
+  ctx.stroke();
+  if (typeof ctx.setLineDash === 'function') ctx.setLineDash([]);
+  ctx.restore();
 
   // Spawn marker at (SPAWN_X=2, SPAWN_Y=1)
   const spawnCx = boardX + (SPAWN_X + 0.5) * cellSize;
@@ -456,7 +477,7 @@ export function drawGame(ctx, state, anim = {}) {
   // 5. Right HUD panels
   // NEXT PAIR panel
   const nextY = boardY;
-  const nextH = 136;
+  const nextH = 122;
   drawRoundedPanel(ctx, hudX, nextY, hudW, nextH, 8);
   ctx.fillStyle = '#0b1224';
   ctx.fill();
@@ -467,18 +488,18 @@ export function drawGame(ctx, state, anim = {}) {
   ctx.fillStyle = '#7f99cc';
   ctx.font = 'bold 12px "Segoe UI", "Consolas", monospace';
   ctx.textAlign = 'left';
-  ctx.fillText('NEXT PAIR', hudX + 14, nextY + 20);
+  ctx.fillText('NEXT PAIR', hudX + 14, nextY + 18);
 
   if (Array.isArray(view.next) && view.next.length >= 2) {
     const previewCx = hudX + hudW / 2;
     // child (next[1]) spawns above axis (next[0])
-    drawGeometricCore(ctx, previewCx, nextY + 58, 38, view.next[1], {});
-    drawGeometricCore(ctx, previewCx, nextY + 102, 38, view.next[0], { isAxis: true });
+    drawGeometricCore(ctx, previewCx, nextY + 52, 36, view.next[1], {});
+    drawGeometricCore(ctx, previewCx, nextY + 93, 36, view.next[0], { isAxis: true });
   }
 
   // SCORE panel
-  const scoreY = nextY + nextH + 14;
-  const scoreH = 92;
+  const scoreY = nextY + nextH + 10;
+  const scoreH = 82;
   drawRoundedPanel(ctx, hudX, scoreY, hudW, scoreH, 8);
   ctx.fillStyle = '#0b1224';
   ctx.fill();
@@ -487,20 +508,20 @@ export function drawGame(ctx, state, anim = {}) {
 
   ctx.fillStyle = '#7f99cc';
   ctx.font = 'bold 12px "Segoe UI", "Consolas", monospace';
-  ctx.fillText('SCORE', hudX + 14, scoreY + 20);
+  ctx.fillText('SCORE', hudX + 14, scoreY + 18);
 
   ctx.fillStyle = '#eaf4ff';
-  ctx.font = 'bold 26px "Consolas", "Segoe UI", monospace';
-  ctx.fillText(String(view.score ?? 0).padStart(6, '0'), hudX + 14, scoreY + 50);
+  ctx.font = 'bold 24px "Consolas", "Segoe UI", monospace';
+  ctx.fillText(String(view.score ?? 0).padStart(6, '0'), hudX + 14, scoreY + 45);
 
   const speedMs = dropInterval({ score: view.score ?? 0 });
   ctx.fillStyle = '#5875a8';
   ctx.font = '11px "Consolas", "Segoe UI", monospace';
-  ctx.fillText(`DROP INTERVAL: ${speedMs}ms`, hudX + 14, scoreY + 75);
+  ctx.fillText(`DROP INTERVAL: ${speedMs}ms`, hudX + 14, scoreY + 68);
 
   // CHAIN panel
-  const chainY = scoreY + scoreH + 14;
-  const chainH = 104;
+  const chainY = scoreY + scoreH + 10;
+  const chainH = 86;
   drawRoundedPanel(ctx, hudX, chainY, hudW, chainH, 8);
   ctx.fillStyle = '#0b1224';
   ctx.fill();
@@ -509,25 +530,25 @@ export function drawGame(ctx, state, anim = {}) {
 
   ctx.fillStyle = '#7f99cc';
   ctx.font = 'bold 12px "Segoe UI", "Consolas", monospace';
-  ctx.fillText('MAX CHAIN', hudX + 14, chainY + 20);
+  ctx.fillText('MAX CHAIN', hudX + 14, chainY + 18);
 
   ctx.fillStyle = '#ffb703';
-  ctx.font = 'bold 24px "Consolas", "Segoe UI", monospace';
-  ctx.fillText(`${view.maxChain ?? 0}`, hudX + 14, chainY + 48);
+  ctx.font = 'bold 22px "Consolas", "Segoe UI", monospace';
+  ctx.fillText(`${view.maxChain ?? 0}`, hudX + 14, chainY + 44);
 
   const activeChainCount = view.chainPopup?.chain ?? (view.lastChain > 0 ? view.lastChain : 0);
   if (activeChainCount > 0) {
     ctx.fillStyle = activeChainCount >= 2 ? '#ff2a85' : '#00f0ff';
-    ctx.font = 'bold 16px "Consolas", "Segoe UI", monospace';
-    ctx.fillText(`${activeChainCount} CHAIN`, hudX + 14, chainY + 80);
+    ctx.font = 'bold 15px "Consolas", "Segoe UI", monospace';
+    ctx.fillText(`${activeChainCount} CHAIN`, hudX + 14, chainY + 70);
   } else {
     ctx.fillStyle = '#48608f';
     ctx.font = '12px "Consolas", "Segoe UI", monospace';
-    ctx.fillText('READY', hudX + 14, chainY + 80);
+    ctx.fillText('READY', hudX + 14, chainY + 70);
   }
 
-  // CONTROLS panel
-  const ctrlY = chainY + chainH + 14;
+  // CONTROLS panel (Keyboard + Gamepad standard bindings)
+  const ctrlY = chainY + chainH + 10;
   const ctrlH = boardY + boardH - ctrlY;
   drawRoundedPanel(ctx, hudX, ctrlY, hudW, ctrlH, 8);
   ctx.fillStyle = '#0b1224';
@@ -536,23 +557,25 @@ export function drawGame(ctx, state, anim = {}) {
   ctx.stroke();
 
   ctx.fillStyle = '#7f99cc';
-  ctx.font = 'bold 12px "Segoe UI", "Consolas", monospace';
-  ctx.fillText('CONTROLS', hudX + 14, ctrlY + 20);
+  ctx.font = 'bold 11px "Segoe UI", "Consolas", monospace';
+  ctx.fillText('CONTROLS (KEY / PAD)', hudX + 12, ctrlY + 18);
 
   const controls = [
-    ['← / →', 'MOVE PAIR'],
-    ['↓', 'FAST DROP'],
-    ['Z / X', 'ROTATE L / R'],
-    ['P', 'PAUSE'],
-    ['R', 'RESTART'],
+    ['←→ / D-Pad,LS', 'MOVE'],
+    ['↓ / Down,LS', 'DROP'],
+    ['Z,X / B,A(A,B)', 'ROT L/R'],
+    ['P / + (Menu)', 'PAUSE'],
+    ['R / - (View)', 'RESTART'],
+    ['M / Y (X)', 'BGM'],
+    ['F / Button', 'FULLSCR'],
   ];
-  ctx.font = '12px "Consolas", "Segoe UI", monospace';
+  ctx.font = '11px "Consolas", "Segoe UI", monospace';
   controls.forEach(([key, desc], idx) => {
-    const rowY = ctrlY + 46 + idx * 23;
+    const rowY = ctrlY + 40 + idx * 23;
     ctx.fillStyle = '#00f0ff';
-    ctx.fillText(key, hudX + 14, rowY);
+    ctx.fillText(key, hudX + 12, rowY);
     ctx.fillStyle = '#a9bee8';
-    ctx.fillText(desc, hudX + 78, rowY);
+    ctx.fillText(desc, hudX + 122, rowY);
   });
 
   // 6. Floating "N CHAIN" popup on the playfield
@@ -610,7 +633,7 @@ export function drawGame(ctx, state, anim = {}) {
     ctx.fillStyle = '#c5d7f7';
     ctx.font = '13px "Consolas", "Segoe UI", monospace';
     ctx.fillText(
-      view.over ? 'PRESS R TO RESTART' : 'PRESS P TO RESUME',
+      view.over ? 'PRESS R / - TO RESTART' : 'PRESS P / + TO RESUME',
       boxX + boxW / 2,
       boxY + 80
     );

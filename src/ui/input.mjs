@@ -14,9 +14,24 @@ const KEY_MAP = {
   r: 'restart',
   R: 'restart',
   KeyR: 'restart',
+  m: 'bgm',
+  M: 'bgm',
+  KeyM: 'bgm',
+  f: 'fullscreen',
+  F: 'fullscreen',
+  KeyF: 'fullscreen',
+  Escape: 'exitFullscreen',
 };
 
-const NON_REPEAT_ACTIONS = new Set(['rotL', 'rotR', 'pause', 'restart']);
+const NON_REPEAT_ACTIONS = new Set([
+  'rotL',
+  'rotR',
+  'pause',
+  'restart',
+  'bgm',
+  'fullscreen',
+  'exitFullscreen',
+]);
 
 export function keyToAction(event) {
   if (!event || event.ctrlKey || event.altKey || event.metaKey) return null;
@@ -33,7 +48,7 @@ export function bindKeys(target, onAction) {
   const handler = event => {
     const action = keyToAction(event);
     if (!action) return;
-    if (typeof event.preventDefault === 'function') {
+    if (action !== 'exitFullscreen' && typeof event.preventDefault === 'function') {
       event.preventDefault();
     }
     onAction(action, event);

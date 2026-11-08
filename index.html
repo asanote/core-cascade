@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ja">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CORE CASCADE</title>
+  <script data-goatcounter="https://asanote.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpolygon points='32,4 58,19 58,45 32,60 6,45 6,19' fill='%23070b18' stroke='%2300f0ff' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%2300f0ff'/%3E%3C/svg%3E" />
   <style>
     :root {
@@ -16,27 +17,110 @@
     }
     body {
       min-height: 100vh;
+      min-height: 100dvh;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 6px;
       background: radial-gradient(circle at 50% 20%, #0d1734 0%, #050812 65%, #03050b 100%);
       color: #dce9ff;
-      font-family: "Segoe UI", "Consolas", monospace;
+      font-family: "Segoe UI", "Consolas", "Hiragino Kaku Gothic ProN", "Meiryo", monospace;
       user-select: none;
-      padding: 8px;
+      padding: 6px;
       overflow: hidden;
     }
     .cabinet {
+      position: relative;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 10px;
-      padding: 14px;
+      gap: 8px;
+      padding: 12px;
       border-radius: 14px;
       background: rgba(9, 14, 29, 0.88);
       border: 1px solid #1e325c;
       box-shadow: 0 18px 50px rgba(0, 0, 0, 0.75), 0 0 28px rgba(0, 240, 255, 0.12);
+    }
+    body.is-fullscreen .cabinet {
+      border-color: #27447e;
+      box-shadow: 0 0 40px rgba(0, 240, 255, 0.16);
+    }
+    .top-bar {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      min-height: 28px;
+    }
+    .top-bar-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .top-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+    }
+    .gesture-hint {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #050812;
+      background: linear-gradient(90deg, #00f0ff, #00f59b);
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+      box-shadow: 0 0 12px rgba(0, 240, 255, 0.45);
+      cursor: pointer;
+    }
+    .pad-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #00f59b;
+      background: rgba(0, 245, 155, 0.12);
+      border: 1px solid rgba(0, 245, 155, 0.45);
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+    }
+    .ui-btn {
+      appearance: none;
+      border: 1px solid #244075;
+      background: #0b142a;
+      color: #bfe0ff;
+      font-family: inherit;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .ui-btn:hover {
+      background: #132347;
+      border-color: #00f0ff;
+      color: #ffffff;
+    }
+    .ui-btn[aria-pressed="true"] {
+      border-color: #00f0ff;
+      color: #00f0ff;
+    }
+    .fs-unavailable-note {
+      font-size: 11px;
+      color: #89a7db;
+      padding: 2px 6px;
+      background: rgba(7, 12, 26, 0.8);
+      border: 1px solid #172749;
+      border-radius: 4px;
     }
     canvas#game-canvas {
       display: block;
@@ -60,16 +144,41 @@
     .status-bar strong {
       color: #00f0ff;
     }
+    .footer-note {
+      font-size: 11px;
+      color: #6b82ad;
+      text-align: center;
+      line-height: 1.4;
+      padding: 0 8px;
+    }
+    body.is-fullscreen .footer-note {
+      display: none;
+    }
+    [hidden] {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
-  <main class="cabinet">
+  <main class="cabinet" id="game-cabinet">
+    <div class="top-bar">
+      <div class="top-bar-left">
+        <span id="gesture-hint" class="gesture-hint">タップまたはキーで開始</span>
+        <span id="gamepad-indicator" class="pad-indicator" hidden>🎮 接続中</span>
+      </div>
+      <div class="top-bar-right">
+        <button type="button" id="bgm-btn" class="ui-btn" aria-pressed="true" title="BGM ON/OFF (M)">BGM: ON (M)</button>
+        <button type="button" id="fullscreen-btn" class="ui-btn" aria-pressed="false" title="全画面表示 (F)">全画面 (F)</button>
+        <span id="fullscreen-note" class="fs-unavailable-note" hidden>iPhone ではホーム画面に追加すると全画面で遊べます</span>
+      </div>
+    </div>
     <canvas id="game-canvas" width="560" height="640" aria-label="CORE CASCADE playfield"></canvas>
     <div class="status-bar">
       <strong>CORE CASCADE</strong>
       <span id="game-status">READY</span>
     </div>
   </main>
+  <footer class="footer-note">遊ばれた回数を知るためにアクセス解析（GoatCounter）を使っています。Cookieは使わず、個人を特定する情報は集めません。</footer>
   <script type="module" src="./src/ui/main.mjs"></script>
 </body>
 </html>
