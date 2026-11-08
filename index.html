@@ -51,6 +51,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
       gap: 8px;
       min-height: 28px;
     }
@@ -63,6 +64,8 @@
     .top-bar-right {
       display: flex;
       align-items: center;
+      justify-content: flex-end;
+      flex-wrap: wrap;
       gap: 6px;
       margin-left: auto;
     }
@@ -77,6 +80,7 @@
       border-radius: 999px;
       letter-spacing: 0.04em;
       box-shadow: 0 0 12px rgba(0, 240, 255, 0.45);
+      white-space: nowrap;
       cursor: pointer;
     }
     .pad-indicator {
@@ -91,6 +95,7 @@
       border: 1px solid rgba(0, 245, 155, 0.45);
       border-radius: 999px;
       letter-spacing: 0.04em;
+      white-space: nowrap;
     }
     .ui-btn {
       appearance: none;
@@ -102,6 +107,7 @@
       font-weight: 600;
       padding: 4px 10px;
       border-radius: 6px;
+      white-space: nowrap;
       cursor: pointer;
       transition: background 0.15s, border-color 0.15s, color 0.15s;
     }

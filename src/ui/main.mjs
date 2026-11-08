@@ -24,7 +24,51 @@ import {
   pollNavigatorGamepads,
 } from './gamepad.mjs';
 
-export function track(path,title){try{if(window.goatcounter&&window.goatcounter.count)window.goatcounter.count({path:'cascade-'+path,title,event:true});}catch(e){}}
+const MAX_TRACK_QUEUE = 64;
+const pendingTrackByWin = new WeakMap();
+
+function getTrackQueue(win) {
+  if (!win || (typeof win !== 'object' && typeof win !== 'function')) return null;
+  let q = pendingTrackByWin.get(win);
+  if (!q) {
+    q = [];
+    pendingTrackByWin.set(win, q);
+  }
+  return q;
+}
+
+export function flushTrackQueue(win = typeof window !== 'undefined' ? window : null) {
+  try {
+    if (!win || !win.goatcounter || typeof win.goatcounter.count !== 'function') {
+      return false;
+    }
+    const q = pendingTrackByWin.get(win);
+    if (!q || q.length === 0) return true;
+    while (q.length > 0) {
+      const item = q.shift();
+      win.goatcounter.count(item);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function track(path, title) {
+  try {
+    if (typeof window === 'undefined' || !window) return;
+    const payload = { path: 'cascade-' + path, title, event: true };
+    if (window.goatcounter && typeof window.goatcounter.count === 'function') {
+      flushTrackQueue(window);
+      window.goatcounter.count(payload);
+    } else {
+      const q = getTrackQueue(window);
+      if (q && q.length < MAX_TRACK_QUEUE) {
+        q.push(payload);
+      }
+    }
+  } catch (e) {}
+}
 
 export function createAnimState() {
   return {
@@ -103,15 +147,14 @@ export function stepAnim(anim, dtMs, paused = false) {
 
 export function isFullscreenSupported(doc = typeof document !== 'undefined' ? document : null) {
   if (!doc || !doc.documentElement) return false;
-  const el = doc.documentElement;
-  const hasMethod =
-    typeof el.requestFullscreen === 'function' ||
-    typeof el.webkitRequestFullscreen === 'function';
-  if (!hasMethod) return false;
-  if (doc.fullscreenEnabled === false && doc.webkitFullscreenEnabled === false) {
+  if (doc.fullscreenEnabled === false || doc.webkitFullscreenEnabled === false) {
     return false;
   }
-  return true;
+  const el = doc.documentElement;
+  return (
+    typeof el.requestFullscreen === 'function' ||
+    typeof el.webkitRequestFullscreen === 'function'
+  );
 }
 
 export function createGameController({
@@ -155,15 +198,16 @@ export function createGameController({
       }
     },
     render() {
+      flushTrackQueue();
       if (this.ctx) {
         drawGame(this.ctx, this.state, this.anim);
       }
       if (this.statusEl) {
         const view = getRenderView(this.state, this.anim);
         if (view.over) {
-          this.statusEl.textContent = 'GAME OVER — Press R to Restart';
+          this.statusEl.textContent = 'GAME OVER — Press R or Pad (- / View) to Restart';
         } else if (view.paused) {
-          this.statusEl.textContent = 'PAUSED — Press P to Resume';
+          this.statusEl.textContent = 'PAUSED — Press P or Pad (+ / Menu) to Resume';
         } else if (view.chainPopup && view.chainPopup.chain >= 1) {
           this.statusEl.textContent = `${view.chainPopup.chain} CHAIN! SCORE ${view.score}`;
         } else {
@@ -175,8 +219,10 @@ export function createGameController({
       }
     },
     dispatch(action) {
+      flushTrackQueue();
       if (action === 'bgm') {
-        toggleBgm({ paused: this.state.paused, over: this.state.over });
+        const view = this.getView();
+        toggleBgm({ paused: view.paused, over: view.over });
         this.render();
         return this.state;
       }
@@ -199,7 +245,7 @@ export function createGameController({
         this.gameoverTracked = false;
         playActionSound('restart');
         restartBgm();
-        syncBgmWithGameState(this.state);
+        syncBgmWithGameState(this.getView());
         track('start', 'Game Start');
         this.render();
         return this.state;
@@ -208,7 +254,7 @@ export function createGameController({
         const result = applyAction(this.state, 'pause');
         this.state = result.state;
         playActionSound('pause');
-        syncBgmWithGameState(this.state);
+        syncBgmWithGameState(this.getView());
         this.render();
         return this.state;
       }
@@ -226,16 +272,17 @@ export function createGameController({
         queueEvents(this.anim, prevState, result.state, result.events);
         this.trackEvents(result.events, result.state);
       }
-      syncBgmWithGameState(this.state);
+      syncBgmWithGameState(this.getView());
       this.render();
       return this.state;
     },
     step(dtMs) {
+      flushTrackQueue();
       if (!Number.isFinite(dtMs) || dtMs <= 0) return this.state;
       // Stop advancing game time while a clear animation is active or once one is queued
       if (isAnimatingClear(this.anim)) {
         stepAnim(this.anim, dtMs, this.state.paused);
-        syncBgmWithGameState(this.state);
+        syncBgmWithGameState(this.getView());
         this.render();
         return this.state;
       }
@@ -247,7 +294,7 @@ export function createGameController({
         queueEvents(this.anim, prevState, result.state, result.events);
         this.trackEvents(result.events, result.state);
       }
-      syncBgmWithGameState(this.state);
+      syncBgmWithGameState(this.getView());
       this.render();
       return this.state;
     },
@@ -257,7 +304,7 @@ export function createGameController({
   };
 
   track('start', 'Game Start');
-  syncBgmWithGameState(controller.state);
+  syncBgmWithGameState(controller.getView());
   controller.render();
   return controller;
 }
@@ -267,12 +314,16 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
   const canvas = rootDoc.getElementById('game-canvas');
   if (!canvas) return null;
   const ctx = canvas.getContext('2d');
+  const cabinetEl = rootDoc.getElementById('game-cabinet');
   const statusEl = rootDoc.getElementById('game-status');
   const gestureHintEl = rootDoc.getElementById('gesture-hint');
   const gamepadIndicatorEl = rootDoc.getElementById('gamepad-indicator');
   const bgmBtnEl = rootDoc.getElementById('bgm-btn');
   const fullscreenBtnEl = rootDoc.getElementById('fullscreen-btn');
   const fullscreenNoteEl = rootDoc.getElementById('fullscreen-note');
+  const topBarEl = typeof rootDoc.querySelector === 'function' ? rootDoc.querySelector('.top-bar') : null;
+  const statusBarEl = typeof rootDoc.querySelector === 'function' ? rootDoc.querySelector('.status-bar') : null;
+  const footerEl = typeof rootDoc.querySelector === 'function' ? rootDoc.querySelector('.footer-note') : null;
 
   let initialSeed = Date.now();
   if (typeof window !== 'undefined' && window.location?.search) {
@@ -290,6 +341,19 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
     return nativeFs || fallbackFullscreen;
   }
 
+  function measureNonCanvasChrome(inFs) {
+    const topBarH = Math.max(28, Math.ceil(topBarEl?.getBoundingClientRect?.().height || topBarEl?.offsetHeight || 28));
+    const statusBarH = Math.max(30, Math.ceil(statusBarEl?.getBoundingClientRect?.().height || statusBarEl?.offsetHeight || 30));
+    const footerH = inFs
+      ? 0
+      : Math.max(18, Math.ceil(footerEl?.getBoundingClientRect?.().height || footerEl?.offsetHeight || 18)) + 6;
+    // body padding (12) + cabinet padding/border (26) + cabinet 2 flex gaps (16) + breathing room (8)
+    const verticalChrome = 12 + 26 + 16 + 8 + topBarH + statusBarH + footerH;
+    // body padding (12) + cabinet padding/border (26) + breathing room (8)
+    const horizontalChrome = 12 + 26 + 8;
+    return { verticalChrome, horizontalChrome, topBarH, footerH };
+  }
+
   function fitLayout() {
     if (typeof window === 'undefined') return;
     const vw = Math.max(240, window.innerWidth || LOGICAL_WIDTH);
@@ -301,16 +365,47 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
       rootDoc.body.classList.toggle('is-fullscreen', inFs);
     }
 
-    const availW = Math.max(180, vw - (inFs ? 32 : 28));
-    const availH = Math.max(180, vh - (inFs ? 96 : 132));
-    const rawScale = Math.min(availW / LOGICAL_WIDTH, availH / LOGICAL_HEIGHT);
-    const scale = inFs ? rawScale : Math.min(1, rawScale);
+    const pass1 = measureNonCanvasChrome(inFs);
+    const availW = Math.max(180, vw - pass1.horizontalChrome);
+    const availH1 = Math.max(180, vh - pass1.verticalChrome);
+    const rawScale1 = Math.min(availW / LOGICAL_WIDTH, availH1 / LOGICAL_HEIGHT);
+    const scale1 = inFs ? rawScale1 : Math.min(1, rawScale1);
 
-    const displayW = Math.max(140, Math.round(LOGICAL_WIDTH * scale));
-    const displayH = Math.max(160, Math.round(LOGICAL_HEIGHT * scale));
+    let displayW = Math.max(140, Math.floor(LOGICAL_WIDTH * scale1));
+    let displayH = Math.max(160, Math.floor(LOGICAL_HEIGHT * scale1));
 
     canvas.style.width = `${displayW}px`;
     canvas.style.height = `${displayH}px`;
+
+    // Re-measure in case narrowing the cabinet caused .top-bar or .footer-note to wrap onto multiple lines
+    const pass2 = measureNonCanvasChrome(inFs);
+    if (pass2.verticalChrome > pass1.verticalChrome) {
+      const availH2 = Math.max(180, vh - pass2.verticalChrome);
+      const rawScale2 = Math.min(availW / LOGICAL_WIDTH, availH2 / LOGICAL_HEIGHT);
+      const scale2 = inFs ? rawScale2 : Math.min(1, rawScale2);
+      displayW = Math.max(140, Math.floor(LOGICAL_WIDTH * scale2));
+      displayH = Math.max(160, Math.floor(LOGICAL_HEIGHT * scale2));
+      canvas.style.width = `${displayW}px`;
+      canvas.style.height = `${displayH}px`;
+    }
+
+    // Final bounding-box check if DOM layout rects are available
+    if (cabinetEl && typeof cabinetEl.getBoundingClientRect === 'function') {
+      const cabRect = cabinetEl.getBoundingClientRect();
+      const footRect = !inFs && footerEl && typeof footerEl.getBoundingClientRect === 'function'
+        ? footerEl.getBoundingClientRect()
+        : null;
+      const totalBottom = footRect && footRect.height > 0 ? footRect.bottom : cabRect.bottom;
+      const totalTop = cabRect.top;
+      const usedH = totalBottom - totalTop;
+      if (usedH > vh - 8 && displayH > 160) {
+        const excess = Math.ceil(usedH - (vh - 8));
+        displayH = Math.max(160, displayH - excess);
+        displayW = Math.max(140, Math.floor((displayH * LOGICAL_WIDTH) / LOGICAL_HEIGHT));
+        canvas.style.width = `${displayW}px`;
+        canvas.style.height = `${displayH}px`;
+      }
+    }
 
     const targetPixelW = Math.max(140, Math.round(displayW * dpr));
     const targetPixelH = Math.max(160, Math.round(displayH * dpr));
@@ -350,23 +445,36 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
     }
   }
 
-  function enterFullscreen() {
-    if (!isFullscreenSupported(rootDoc)) return;
-    fallbackFullscreen = true;
-    const el = rootDoc.documentElement;
-    const req = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (typeof req === 'function') {
-      try {
-        const res = req.call(el);
-        if (res && typeof res.catch === 'function') {
-          res.catch(() => {});
-        }
-      } catch {
-        // Fallback layout still applies
-      }
-    }
+  function rollbackFullscreen() {
+    fallbackFullscreen = false;
     fitLayout();
     updateUiControls();
+  }
+
+  function enterFullscreen() {
+    if (!isFullscreenSupported(rootDoc)) return;
+    const el = rootDoc.documentElement;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (typeof req !== 'function') return;
+    fallbackFullscreen = true;
+    fitLayout();
+    updateUiControls();
+    try {
+      const res = req.call(el);
+      if (res && typeof res.then === 'function') {
+        res.then(
+          () => {
+            fitLayout();
+            updateUiControls();
+          },
+          () => {
+            rollbackFullscreen();
+          }
+        );
+      }
+    } catch {
+      rollbackFullscreen();
+    }
   }
 
   function exitFullscreen() {
@@ -417,11 +525,12 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
   fitLayout();
   updateUiControls();
 
-  // First user gesture (key press, click, or tap — NOT gamepad) unlocks audio and starts BGM
+  // User gesture (key press, click, or tap — NOT gamepad) unlocks/resumes audio and starts BGM
   function handleUserGesture() {
-    if (!isAudioUnlocked()) {
-      unlockAudio();
-      syncBgmWithGameState(controller.state);
+    const firstUnlock = !isAudioUnlocked();
+    unlockAudio();
+    if (firstUnlock) {
+      syncBgmWithGameState(controller.getView());
       updateUiControls();
     }
   }
@@ -435,6 +544,15 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
     target.addEventListener('click', handleUserGesture, { capture: true, passive: true });
     target.addEventListener('resize', fitLayout);
     target.addEventListener('orientationchange', fitLayout);
+    target.addEventListener('load', () => flushTrackQueue());
+  }
+
+  const gcScript =
+    typeof rootDoc.querySelector === 'function'
+      ? rootDoc.querySelector('script[data-goatcounter]')
+      : null;
+  if (gcScript && typeof gcScript.addEventListener === 'function') {
+    gcScript.addEventListener('load', () => flushTrackQueue());
   }
 
   const onFsChange = () => {
@@ -448,6 +566,8 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
   if (typeof rootDoc.addEventListener === 'function') {
     rootDoc.addEventListener('fullscreenchange', onFsChange);
     rootDoc.addEventListener('webkitfullscreenchange', onFsChange);
+    rootDoc.addEventListener('fullscreenerror', rollbackFullscreen);
+    rootDoc.addEventListener('webkitfullscreenerror', rollbackFullscreen);
   }
 
   if (bgmBtnEl) {
@@ -520,6 +640,7 @@ export function startApp(rootDoc = typeof document !== 'undefined' ? document : 
       toggleFullscreen,
       isFullscreenActive,
       updateFullscreenCapability,
+      flushTrackQueue,
       stopLoop() {
         if (rafId !== null && typeof cancelAnimationFrame === 'function') {
           cancelAnimationFrame(rafId);

@@ -7,7 +7,7 @@ export const HIGH_STACK_ROW = 4;
 
 const LOOKAHEAD_MS = 25;
 const SCHEDULE_AHEAD_SEC = 0.12;
-const LOOP_STEPS = 64; // 4 bars of 16th notes
+export const LOOP_STEPS = 64; // 4 bars of 16th notes
 
 let audioCtx = null;
 let noiseBuffer = null;
@@ -22,24 +22,24 @@ let nextNoteTime = 0;
 let schedulerTimer = null;
 
 // Original 4-bar bright bouncy puzzle loop ("Cascade Pulse" in F major / D minor pentatonic)
-// Each entry is [midiNote, lengthIn16ths] or null for rest.
-const MELODY_STEPS = [
-  // Bar 1: Sunny rising cascade motif
+// Each entry is [midiNote, lengthIn16ths] or null for rest. Each bar is 16 sixteenth-note steps (64 total).
+export const MELODY_STEPS = [
+  // Bar 1 (16 steps): Sunny rising cascade motif (F -> Dm)
   [77, 2], null, [81, 1], [84, 2], null, [79, 1], [81, 2], null,
-  [77, 1], [74, 1], [72, 2], null, [74, 1], [77, 1],
-  // Bar 2: Bouncy answer phrase
+  [77, 1], [74, 1], [72, 2], null, [74, 1], [77, 2], null, [81, 1],
+  // Bar 2 (16 steps): Bouncy answer phrase (Gm -> C)
   [79, 2], null, [82, 1], [86, 2], null, [84, 1], [81, 2], null,
-  [79, 1], [77, 1], [76, 2], null, [79, 2], null,
-  // Bar 3: High sparkle jump
+  [79, 1], [77, 1], [76, 2], null, [79, 2], null, [84, 2], null,
+  // Bar 3 (16 steps): High sparkle jump (F -> Bb)
   [81, 2], null, [84, 1], [89, 2], null, [88, 1], [86, 2], null,
-  [84, 1], [81, 1], [82, 2], null, [81, 1], [77, 1],
-  // Bar 4: Playful turnaround back to root
+  [84, 1], [81, 1], [82, 2], null, [81, 1], [77, 1], [74, 2], null,
+  // Bar 4 (16 steps): Playful turnaround back to root (Gm -> C7)
   [79, 1], [81, 1], [82, 2], null, [86, 1], [84, 2], null, [81, 1],
-  [79, 2], null, [76, 2], null, [77, 2], null,
+  [79, 2], null, [76, 2], null, [77, 2], null, [84, 2], null,
 ];
 
 // Bouncy off-beat triangle bassline (MIDI note numbers)
-const BASS_STEPS = [
+export const BASS_STEPS = [
   // Bar 1 (F -> Dm)
   53, null, 65, null, 53, null, 60, 53,
   50, null, 62, null, 50, null, 57, 50,
@@ -55,7 +55,7 @@ const BASS_STEPS = [
 ];
 
 // Light off-beat harmony / arpeggio chimes
-const HARMONY_STEPS = [
+export const HARMONY_STEPS = [
   null, null, 69, null, null, null, 72, null, null, null, 69, null, null, null, 65, null,
   null, null, 70, null, null, null, 74, null, null, null, 72, null, null, null, 67, null,
   null, null, 72, null, null, null, 77, null, null, null, 74, null, null, null, 70, null,
@@ -63,7 +63,7 @@ const HARMONY_STEPS = [
 ];
 
 // Light percussion pattern: 'k' = soft kick, 'h' = crisp hi-hat, 's' = light snare/pop
-const PERC_STEPS = [
+export const PERC_STEPS = [
   'k', null, 'h', null, 's', null, 'h', 'k', null, 'h', 'k', null, 's', null, 'h', null,
   'k', null, 'h', null, 's', null, 'h', 'k', null, 'h', 'k', null, 's', null, 'h', 'h',
   'k', null, 'h', null, 's', null, 'h', 'k', null, 'h', 'k', null, 's', null, 'h', null,
@@ -74,24 +74,36 @@ export function midiToFreq(midi) {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-export function loadBgmPreference(storage = typeof localStorage !== 'undefined' ? localStorage : null) {
+export function loadBgmPreference(storage) {
   try {
-    if (!storage || typeof storage.getItem !== 'function') return true;
-    const raw = storage.getItem(BGM_STORAGE_KEY);
+    const targetStorage =
+      storage !== undefined
+        ? storage
+        : typeof localStorage !== 'undefined'
+          ? localStorage
+          : null;
+    if (!targetStorage || typeof targetStorage.getItem !== 'function') return true;
+    const raw = targetStorage.getItem(BGM_STORAGE_KEY);
     if (raw === 'off' || raw === '0' || raw === 'false') return false;
     if (raw === 'on' || raw === '1' || raw === 'true') return true;
   } catch {
-    // Ignore storage access errors
+    // Ignore storage access errors (including SecurityError on localStorage getter)
   }
   return true;
 }
 
-export function saveBgmPreference(enabled, storage = typeof localStorage !== 'undefined' ? localStorage : null) {
+export function saveBgmPreference(enabled, storage) {
   try {
-    if (!storage || typeof storage.setItem !== 'function') return;
-    storage.setItem(BGM_STORAGE_KEY, enabled ? 'on' : 'off');
+    const targetStorage =
+      storage !== undefined
+        ? storage
+        : typeof localStorage !== 'undefined'
+          ? localStorage
+          : null;
+    if (!targetStorage || typeof targetStorage.setItem !== 'function') return;
+    targetStorage.setItem(BGM_STORAGE_KEY, enabled ? 'on' : 'off');
   } catch {
-    // Ignore storage access errors
+    // Ignore storage access errors (including SecurityError on localStorage getter)
   }
 }
 
@@ -109,6 +121,7 @@ export function isHighStack(board, thresholdRow = HIGH_STACK_ROW) {
 }
 
 function getAudioContext() {
+  if (!audioUnlocked) return null;
   if (typeof window === 'undefined') return null;
   const Ctx = window.AudioContext || window.webkitAudioContext;
   if (!Ctx) return null;
@@ -118,9 +131,6 @@ function getAudioContext() {
     } catch {
       return null;
     }
-  }
-  if (audioCtx.state === 'suspended' && audioUnlocked) {
-    audioCtx.resume().catch(() => {});
   }
   return audioCtx;
 }
@@ -253,10 +263,11 @@ function scheduleStepAt(ctx, stepIndex, noteTime, stepDurSec) {
   }
 }
 
-function scheduleBgmWindow() {
+export function scheduleBgmWindow() {
   if (!bgmPlaying || !bgmEnabled || !audioUnlocked) return;
   const ctx = getAudioContext();
   if (!ctx) return;
+  if (ctx.state && ctx.state !== 'running') return;
 
   const now = ctx.currentTime;
   if (nextNoteTime < now - 0.05) {
@@ -329,8 +340,15 @@ export function unlockAudio() {
   const wasUnlocked = audioUnlocked;
   audioUnlocked = true;
   const ctx = getAudioContext();
-  if (ctx && ctx.state === 'suspended') {
-    ctx.resume().catch(() => {});
+  if (ctx && ctx.state !== 'running' && typeof ctx.resume === 'function') {
+    try {
+      const res = ctx.resume();
+      if (res && typeof res.catch === 'function') {
+        res.catch(() => {});
+      }
+    } catch {
+      // Ignore resume errors
+    }
   }
   return !wasUnlocked;
 }
@@ -383,6 +401,9 @@ export function getBgmState() {
 
 export function resetAudioForTest({ unlocked = false, enabled = true } = {}) {
   stopBgm({ reset: true });
+  audioCtx = null;
+  bgmBus = null;
+  noiseBuffer = null;
   audioUnlocked = Boolean(unlocked);
   bgmEnabled = Boolean(enabled);
   bgmHighTempo = false;
@@ -390,8 +411,10 @@ export function resetAudioForTest({ unlocked = false, enabled = true } = {}) {
 }
 
 function playTone(freq, durationSec, type = 'sine', gainPeak = 0.08, freqEnd = null) {
+  if (!audioUnlocked) return;
   const ctx = getAudioContext();
   if (!ctx) return;
+  if (ctx.state && ctx.state !== 'running') return;
   try {
     const now = ctx.currentTime;
     const osc = ctx.createOscillator();
